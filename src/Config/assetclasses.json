@@ -1,0 +1,122 @@
+{
+  "Computers": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative inventory export (CMDB/MECM/Jamf). Used as the gold standard.",
+      "patterns": [ "*CMDB*", "*MECM*", "*Jamf*", "*Baseline*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Latest discovery/scan (Nessus/SNMP/Nmap/etc). Used to find drift and gaps.",
+      "patterns": [ "*Discovery*", "*Scan*", "*Nessus*", "*SNMP*", "*Nmap*" ]
+    }
+  ],
+  "Printers": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative printer list (CMDB/ServiceNow report).",
+      "patterns": [ "*CMDB*", "*ServiceNow*", "*Baseline*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Fresh SNMP sweep or print server inventory export.",
+      "patterns": [ "*SNMP*", "*PrintServer*", "*Discovery*", "*Scan*" ]
+    }
+  ],
+  "Windows Server": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative server list (CMDB/MECM).",
+      "patterns": [ "*CMDB*", "*MECM*", "*Baseline*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Latest network/server discovery scan.",
+      "patterns": [ "*Discovery*", "*Scan*", "*Nmap*", "*Nessus*" ]
+    }
+  ],
+  "Network Switch": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative switch inventory (CMDB/NMS export).",
+      "patterns": [ "*CMDB*", "*Baseline*", "*NMS*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Fresh L2/L3 discovery export (SNMP/poller).",
+      "patterns": [ "*SNMP*", "*Discovery*", "*Scan*", "*Poller*" ]
+    }
+  ],
+  "Network Router": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative router inventory.",
+      "patterns": [ "*CMDB*", "*Baseline*", "*NMS*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Fresh discovery export.",
+      "patterns": [ "*SNMP*", "*Discovery*", "*Scan*", "*Poller*" ]
+    }
+  ],
+  "Network Firewall": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative firewall list.",
+      "patterns": [ "*CMDB*", "*Baseline*", "*NMS*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Fresh discovery export.",
+      "patterns": [ "*SNMP*", "*Discovery*", "*Scan*", "*Poller*" ]
+    }
+  ],
+  "Network Load Balancer": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative LB inventory.",
+      "patterns": [ "*CMDB*", "*Baseline*", "*NMS*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Fresh discovery export.",
+      "patterns": [ "*SNMP*", "*Discovery*", "*Scan*", "*Poller*" ]
+    }
+  ],
+  "Network Wireless Access Point": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative WAP inventory.",
+      "patterns": [ "*CMDB*", "*Baseline*", "*NMS*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Fresh WAP discovery export.",
+      "patterns": [ "*SNMP*", "*Discovery*", "*Scan*", "*Poller*" ]
+    }
+  ],
+  "Network Teleworker Gateway": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative TWG list.",
+      "patterns": [ "*CMDB*", "*Baseline*", "*NMS*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Fresh discovery export.",
+      "patterns": [ "*SNMP*", "*Discovery*", "*Scan*", "*Poller*" ]
+    }
+  ],
+  "IP Camera": [
+    {
+      "label": "Baseline",
+      "description": "Authoritative camera list (VMS/CMDB).",
+      "patterns": [ "*CMDB*", "*VMS*", "*Baseline*" ]
+    },
+    {
+      "label": "Discovery",
+      "description": "Latest camera discovery scan.",
+      "patterns": [ "*Discovery*", "*Scan*", "*SNMP*" ]
+    }
+  ]
+}
