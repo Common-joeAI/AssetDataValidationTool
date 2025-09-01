@@ -29,14 +29,36 @@ namespace AssetDataValidationTool.Services
                 });
             }
 
-            // Build key sets per source
+            // Initialize primary key map if not provided
+            if (result.PrimaryKeyBySource == null)
+            {
+                result.PrimaryKeyBySource = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            // Build key sets per source using the appropriate column for each source
             var keysByFile = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var src in result.Sources)
             {
                 var hs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // Get the column name to use for this source
+                string columnToUse;
+                if (result.PrimaryKeyBySource.TryGetValue(src.DisplayName, out var mappedColumn))
+                {
+                    // Use the mapped column if it exists
+                    columnToUse = mappedColumn;
+                }
+                else
+                {
+                    // Otherwise use dataPoint directly if it exists as a column
+                    columnToUse = dataPoint;
+                    // Store the mapping for future use
+                    result.PrimaryKeyBySource[src.DisplayName] = dataPoint;
+                }
+
                 foreach (var row in src.Rows)
                 {
-                    if (!row.TryGetValue(dataPoint, out var key)) key = string.Empty;
+                    if (!row.TryGetValue(columnToUse, out var key)) key = string.Empty;
                     if (!string.IsNullOrWhiteSpace(key)) hs.Add(key.Trim());
                 }
                 keysByFile[src.DisplayName] = hs;
@@ -74,17 +96,26 @@ namespace AssetDataValidationTool.Services
                 var rowsByFile = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var src in result.Sources)
                 {
-                    var row = src.Rows.FirstOrDefault(r => r.TryGetValue(dataPoint, out var v) && string.Equals(v?.Trim(), key, StringComparison.OrdinalIgnoreCase));
+                    // Get the mapped column name for this source
+                    string columnToUse = result.PrimaryKeyBySource[src.DisplayName];
+
+                    var row = src.Rows.FirstOrDefault(r => r.TryGetValue(columnToUse, out var v) &&
+                                                          string.Equals(v?.Trim(), key, StringComparison.OrdinalIgnoreCase));
                     if (row != null) rowsByFile[src.DisplayName] = row;
                 }
                 if (rowsByFile.Count < 2) continue;
 
                 var commonColumns = result.Sources.Select(s => s.Headers).Aggregate((a, b) => a.Intersect(b, StringComparer.OrdinalIgnoreCase).ToList());
-                // Exclude the key column from conflict checks
-                commonColumns = commonColumns.Where(h => !string.Equals(h, dataPoint, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                // Get all columns used as primary keys
+                var pkColumns = new HashSet<string>(result.PrimaryKeyBySource.Values, StringComparer.OrdinalIgnoreCase);
 
                 foreach (var col in commonColumns)
                 {
+                    // Skip this column if it's used as a primary key in any source
+                    if (pkColumns.Contains(col))
+                        continue;
+
                     string? firstVal = null;
                     bool differs = false;
                     var valuesByFile = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
