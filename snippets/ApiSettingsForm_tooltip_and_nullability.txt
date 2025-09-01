@@ -1,0 +1,21 @@
+
+// Fix ToolTip parameter order (ToolTip.SetToolTip(Control control, string caption))
+// Find lines like these (around lines 90–96):
+// tip.SetToolTip("Base URL", txtBaseUrl);
+// tip.SetToolTip("Auth Type", cmbAuthType);
+// ...
+
+// Replace with:
+tip.SetToolTip(txtBaseUrl, "Base URL");
+tip.SetToolTip(cmbAuthType, "Auth Type");
+tip.SetToolTip(txtApiKey, "API Key");
+tip.SetToolTip(txtUsername, "Username");
+tip.SetToolTip(txtPassword, "Password");
+tip.SetToolTip(txtSourceEndpoint, "Source upload endpoint");
+tip.SetToolTip(txtReportEndpoint, "Report upload endpoint");
+
+// Also, if you build a headers dictionary for ApiSettings.DefaultHeaders (which is Dictionary<string,string?>),
+// ensure you cast values to string? to avoid CS8619, e.g.:
+var headers = someSource.ToDictionary(kv => kv.Key, kv => (string?)kv.Value, StringComparer.OrdinalIgnoreCase);
+// or coalesce nulls:
+var headers2 = someSource.ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase);

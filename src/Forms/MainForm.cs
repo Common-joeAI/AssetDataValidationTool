@@ -1,9 +1,9 @@
-﻿using System;
+// MainForm.cs — conservative version (no target-typed new, safe strings)
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using System.Drawing;
@@ -14,83 +14,64 @@ namespace AssetDataValidationTool.Forms
 {
     public class MainForm : Form
     {
-        // Top controls
-        private ComboBox cmbAssetClass = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
-        private ComboBox cmbDataPoint = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
-        private Button btnValidate = new Button { Text = "Validate", Enabled = false, Width = 120, Height = 36 };
-        private Button btnZip = new Button { Text = "Package Zip", Enabled = false, Width = 120, Height = 36 };
-        private Button btnOpenOutput = new Button { Text = "Open Output Folder", Width = 160, Height = 36 };
-        private Button btnLoadProfile = new Button { Text = "Load From Validation Workbook", Width = 260, Height = 32 };
-        private Button btnOpenConfig = new Button { Text = "Open Config", Width = 120, Height = 32 };
+        private readonly ComboBox cmbAssetClass = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+        private readonly ComboBox cmbDataPoint = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+        private readonly Button btnValidate = new Button { Text = "Validate", Enabled = false, Width = 120, Height = 36 };
+        private readonly Button btnZip = new Button { Text = "Package Zip", Enabled = false, Width = 120, Height = 36 };
+        private readonly Button btnOpenOutput = new Button { Text = "Open Output Folder", Width = 160, Height = 36 };
+        private readonly Button btnLoadProfile = new Button { Text = "Load From Validation Workbook", Width = 260, Height = 32 };
+        private readonly Button btnOpenConfig = new Button { Text = "Open Config", Width = 120, Height = 32 };
+        private readonly Button btnApiSettings = new Button { Text = "API Settings (Future)", Width = 180, Height = 32 };
 
-        // NEW: a grid for source rows
-        private TableLayoutPanel tblFiles = new TableLayoutPanel();
+        private readonly TableLayoutPanel tblFiles = new TableLayoutPanel();
+        private readonly StatusStrip status = new StatusStrip();
+        private readonly ToolStripStatusLabel statusLabel = new ToolStripStatusLabel("Ready");
+        private readonly ToolTip tip = new ToolTip();
 
-        private StatusStrip status = new StatusStrip();
-        private ToolStripStatusLabel statusLabel = new ToolStripStatusLabel("Ready");
-        private ToolTip tip = new ToolTip();
-
-        private string outputRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AssetDataValidationOutput");
-        private Dictionary<string, List<InputRequirement>> requiredFilesByAsset = new(StringComparer.OrdinalIgnoreCase);
-
-        // include pkBox in the tuple
-        private List<(InputRequirement req, Label lbl, TextBox pathBox, Button browseBtn, Label status, ComboBox pkBox)> fileInputs = new();
-
-        private ValidationResults? lastResults;
+        private readonly string outputRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AssetDataValidationOutput");
+        private Dictionary<string, List<InputRequirement>> requiredFilesByAsset = new Dictionary<string, List<InputRequirement>>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<(InputRequirement req, Label lbl, TextBox pathBox, Button browseBtn, Label status, ComboBox pkBox)> fileInputs = new List<(InputRequirement, Label, TextBox, Button, Label, ComboBox)>();
+        private ValidationResults? lastResults; // Made nullable
 
         public MainForm()
         {
             Text = "Asset Data Validation Automation Tool";
             StartPosition = FormStartPosition.CenterScreen;
-            Width = 1100;                 // wider default
-            Height = 720;
+            Width = 1100; Height = 720;
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 10f);
-            Padding = new Padding(0);
 
             status.Items.Add(statusLabel);
             status.Dock = DockStyle.Bottom;
             Controls.Add(status);
 
-            // ROOT layout (rows)
-            var root = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 6,
-                Padding = new Padding(12),
-            };
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));   // row1: asset/config
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));   // explainer
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));   // row2: datapoint
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // sources group (fills)
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));   // divider
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));   // buttons row
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(12) };
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
 
-            // Row1: Asset + Config
-            var row1 = new TableLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                ColumnCount = 4,
-                AutoSize = true,
-                Margin = new Padding(0, 0, 0, 6)
-            };
-            row1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));         // label
-            row1.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));    // asset combo
-            row1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));         // open config
-            row1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));         // load profile
-
+            // Row 1
+            var row1 = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 5, AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
+            row1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row1.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
+            row1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             row1.Controls.Add(new Label { Text = "Asset Class:", AutoSize = true, Padding = new Padding(0, 8, 8, 0) }, 0, 0);
             row1.Controls.Add(cmbAssetClass, 1, 0);
             row1.Controls.Add(btnOpenConfig, 2, 0);
             row1.Controls.Add(btnLoadProfile, 3, 0);
+            row1.Controls.Add(btnApiSettings, 4, 0);
             root.Controls.Add(row1, 0, 0);
 
             btnOpenConfig.Click += (s, e) => OpenConfig();
             btnLoadProfile.Click += (s, e) => LoadFromValidationWorkbook();
+            btnApiSettings.Click += (s, e) => { try { using (var f = new ApiSettingsForm()) f.ShowDialog(this); } catch { } };
 
-            // Explainer
             var explainer = new Label
             {
                 Text = "Baseline = authoritative export (CMDB/MECM/etc).  Discovery = latest scan (SNMP/Nessus/Nmap).",
@@ -100,87 +81,54 @@ namespace AssetDataValidationTool.Forms
             };
             root.Controls.Add(explainer, 0, 1);
 
-            // Row2: Data Point
-            var row2 = new TableLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                ColumnCount = 2,
-                AutoSize = true,
-                Margin = new Padding(0, 0, 0, 8)
-            };
+            // Row 2
+            var row2 = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
             row2.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             row2.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
             row2.Controls.Add(new Label { Text = "Data Point:", AutoSize = true, Padding = new Padding(0, 8, 8, 0) }, 0, 0);
             row2.Controls.Add(cmbDataPoint, 1, 0);
             root.Controls.Add(row2, 0, 2);
 
-            // Group: Sources (with a grid inside)
-            var grp = new GroupBox
-            {
-                Text = "Source Files (hover labels for hints; ✓ name looks right / ! unexpected):",
-                Dock = DockStyle.Fill,
-                Padding = new Padding(10),
-                Margin = new Padding(0, 0, 0, 8)
-            };
+            // Files group
+            var grp = new GroupBox { Text = "Source Files (hover labels for hints; ✓ name looks right / ! unexpected):", Dock = DockStyle.Fill, Padding = new Padding(10), Margin = new Padding(0, 0, 0, 8) };
+            tblFiles.Dock = DockStyle.Fill; tblFiles.AutoSize = false; tblFiles.AutoScroll = true;
+            tblFiles.ColumnCount = 6;
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));
+            grp.Controls.Add(tblFiles);
             root.Controls.Add(grp, 0, 3);
 
-            // Files grid: 6 columns -> Label | TextBox | Browse | Status | "PK:" | PK-Combo
-            tblFiles.Dock = DockStyle.Fill;
-            tblFiles.AutoScroll = true;
-            tblFiles.AutoSize = false;
-            tblFiles.ColumnCount = 6;
-            tblFiles.RowCount = 0;
-            tblFiles.Padding = new Padding(0);
-            // columns: Auto | % | Auto | Auto | Auto | Absolute
-            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));        // Label
-            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));    // TextBox (stretch)
-            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));        // Browse
-            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));        // Status
-            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));        // "PK:"
-            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));   // PK Combo
-            grp.Controls.Add(tblFiles);
-
-            // Divider
             var divider = new Panel { Height = 1, Dock = DockStyle.Top, BackColor = SystemColors.ControlDark, Margin = new Padding(0, 8, 0, 8) };
             root.Controls.Add(divider, 0, 4);
 
-            // Buttons row (bottom)
-            var buttons = new TableLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                ColumnCount = 3,
-                AutoSize = true
-            };
-            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            // Buttons
+            var buttons = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 3, AutoSize = true };
             buttons.Controls.Add(btnValidate, 0, 0);
             buttons.Controls.Add(btnZip, 1, 0);
             buttons.Controls.Add(btnOpenOutput, 2, 0);
             root.Controls.Add(buttons, 0, 5);
 
-            // Events
             cmbAssetClass.SelectedIndexChanged += (s, e) => RebuildFileInputs();
             cmbDataPoint.SelectedIndexChanged += (s, e) => RefreshValidateButton();
             btnValidate.Click += (s, e) => RunValidation();
             btnZip.Click += (s, e) => PackageZip();
             btnOpenOutput.Click += (s, e) => OpenOutputFolder();
 
-            // Init
             LoadConfig();
             LoadDefaults();
         }
 
-        private string ConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "assetclasses.json");
+        private string ConfigPath { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "assetclasses.json"); } }
 
         private void LoadDefaults()
         {
-            string[] defaultDataPoints = new[]
-            {
-                "Hostname","IP Address","MAC Address","Serial Number","Asset Tag","Device Type","Operating System","Location","Owner"
-            };
+            string[] defaults = new string[] { "Hostname", "IP Address", "MAC Address", "Serial Number", "Asset Tag", "Device Type", "Operating System", "Location", "Owner" };
             cmbDataPoint.Items.Clear();
-            cmbDataPoint.Items.AddRange(defaultDataPoints);
+            cmbDataPoint.Items.AddRange(defaults);
             if (cmbDataPoint.Items.Count > 0) cmbDataPoint.SelectedIndex = 0;
         }
 
@@ -188,18 +136,22 @@ namespace AssetDataValidationTool.Forms
         {
             try
             {
+                var dir = Path.GetDirectoryName(ConfigPath);
+                if (string.IsNullOrEmpty(dir))
+                    throw new InvalidOperationException("Config path directory could not be resolved.");
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
                 if (!File.Exists(ConfigPath))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-                    var minimal = "{\n  \"Computers\": [ { \"label\": \"Baseline\" }, { \"label\": \"Discovery\" } ]\n}";
+                    var minimal = @"{""Computers"": [ { ""label"": ""Baseline"" }, { ""label"": ""Discovery"" } ]}";
                     File.WriteAllText(ConfigPath, minimal);
                 }
 
                 var json = File.ReadAllText(ConfigPath);
-                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var opts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
                 Dictionary<string, List<InputRequirement>>? newShape = null;
-                try { newShape = JsonSerializer.Deserialize<Dictionary<string, List<InputRequirement>>>(json, opts); } catch { }
+                try { newShape = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<InputRequirement>>>(json, opts); } catch { }
 
                 if (newShape != null && newShape.Count > 0)
                 {
@@ -208,9 +160,9 @@ namespace AssetDataValidationTool.Forms
                 else
                 {
                     Dictionary<string, List<string>>? oldShape = null;
-                    try { oldShape = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json, opts); } catch { }
+                    try { oldShape = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json, opts); } catch { }
 
-                    requiredFilesByAsset = new(StringComparer.OrdinalIgnoreCase);
+                    requiredFilesByAsset = new Dictionary<string, List<InputRequirement>>(StringComparer.OrdinalIgnoreCase);
                     if (oldShape != null)
                     {
                         foreach (var kv in oldShape)
@@ -228,64 +180,57 @@ namespace AssetDataValidationTool.Forms
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Failed to load config: {ex.Message}");
+                MessageBox.Show(this, "Failed to load config: " + ex.Message);
             }
         }
 
         private void OpenConfig()
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo { FileName = ConfigPath, UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, $"Unable to open config: {ex.Message}");
-            }
+            try { Process.Start(new ProcessStartInfo { FileName = ConfigPath, UseShellExecute = true }); }
+            catch (Exception ex) { MessageBox.Show(this, "Unable to open config: " + ex.Message); }
         }
 
         private void LoadFromValidationWorkbook()
         {
-            using var ofd = new OpenFileDialog
+            using (var ofd = new OpenFileDialog { Filter = "Excel Workbook|*.xlsx|All files|*.*", Title = "Pick a 'Data Validation - <AssetClass>.xlsx' workbook" })
             {
-                Filter = "Excel Workbook|*.xlsx|All files|*.*",
-                Title = "Pick a 'Data Validation - <AssetClass>.xlsx' workbook"
-            };
-            if (ofd.ShowDialog(this) != DialogResult.OK) return;
+                if (ofd.ShowDialog(this) != DialogResult.OK) return;
 
-            var (assetClass, labels) = TemplateProfileReader.ExtractFromValidationWorkbook(ofd.FileName);
+                var result = TemplateProfileReader.ExtractFromValidationWorkbook(ofd.FileName);
+                var assetClass = result.Item1;
+                var labels = result.Item2;
 
-            if (string.IsNullOrWhiteSpace(assetClass))
-            {
-                MessageBox.Show(this, "Could not infer Asset Class from filename. Expected: Data Validation - <AssetClass>.xlsx");
-                return;
-            }
-
-            if (labels == null || labels.Count == 0)
-            {
-                if (!requiredFilesByAsset.ContainsKey(assetClass))
-                    requiredFilesByAsset[assetClass] = new List<InputRequirement>
-                    {
-                        new InputRequirement { Label = "Baseline" },
-                        new InputRequirement { Label = "Discovery" }
-                    };
-            }
-            else
-            {
-                requiredFilesByAsset[assetClass] = labels.Select(s => new InputRequirement
+                if (string.IsNullOrWhiteSpace(assetClass))
                 {
-                    Label = s,
-                    Description = $"Source defined in {Path.GetFileName(ofd.FileName)}",
-                    Patterns = null
-                }).ToList();
+                    MessageBox.Show(this, "Could not infer Asset Class from filename. Expected: Data Validation - <AssetClass>.xlsx");
+                    return;
+                }
+
+                if (labels == null || labels.Count == 0)
+                {
+                    if (!requiredFilesByAsset.ContainsKey(assetClass))
+                        requiredFilesByAsset[assetClass] = new List<InputRequirement>
+                        {
+                            new InputRequirement { Label = "Baseline" },
+                            new InputRequirement { Label = "Discovery" }
+                        };
+                }
+                else
+                {
+                    requiredFilesByAsset[assetClass] = labels.Select(s => new InputRequirement
+                    {
+                        Label = s,
+                        Description = "Source defined in " + Path.GetFileName(ofd.FileName),
+                        Patterns = null
+                    }).ToList();
+                }
+
+                if (!cmbAssetClass.Items.Contains(assetClass)) cmbAssetClass.Items.Add(assetClass);
+                cmbAssetClass.SelectedItem = assetClass;
+
+                RebuildFileInputs();
+                statusLabel.Text = "Loaded profile for " + assetClass + " (" + (labels != null ? labels.Count : 0) + " source label(s))";
             }
-
-            if (!cmbAssetClass.Items.Contains(assetClass))
-                cmbAssetClass.Items.Add(assetClass);
-            cmbAssetClass.SelectedItem = assetClass;
-
-            RebuildFileInputs();
-            statusLabel.Text = $"Loaded profile for {assetClass} ({labels?.Count ?? 0} source label(s))";
         }
 
         private void RebuildFileInputs()
@@ -299,14 +244,20 @@ namespace AssetDataValidationTool.Forms
             var asset = cmbAssetClass.SelectedItem?.ToString() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(asset)) { tblFiles.ResumeLayout(); return; }
 
-            if (!requiredFilesByAsset.TryGetValue(asset, out var reqs) || reqs == null || reqs.Count == 0)
+            List<InputRequirement>? reqs;
+            if (!requiredFilesByAsset.TryGetValue(asset, out reqs) || reqs == null || reqs.Count == 0)
             {
-                reqs = new List<InputRequirement>
-                {
-                    new InputRequirement { Label = "Baseline" },
-                    new InputRequirement { Label = "Discovery" }
-                };
+                reqs = new List<InputRequirement> { new InputRequirement { Label = "Baseline" }, new InputRequirement { Label = "Discovery" } };
             }
+
+            // Set up consistent column widths
+            tblFiles.ColumnStyles.Clear();
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150)); // Label column - fixed width
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));  // TextBox column - fills available space
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // Browse button
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // Status label
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // PK label
+            tblFiles.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240)); // PK dropdown - fixed width
 
             int row = 0;
             foreach (var req in reqs)
@@ -314,12 +265,59 @@ namespace AssetDataValidationTool.Forms
                 tblFiles.RowCount++;
                 tblFiles.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-                var lbl = new Label { Text = req.Label + ":", AutoSize = true, Margin = new Padding(0, 6, 8, 6), Width = 140 };
-                var txt = new TextBox { Margin = new Padding(0, 3, 8, 3), Anchor = AnchorStyles.Left | AnchorStyles.Right, MinimumSize = new Size(300, 0) };
-                var btn = new Button { Text = "Browse...", AutoSize = true, Margin = new Padding(0, 2, 8, 2) };
-                var statusLbl = new Label { Text = "—", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 8, 6) };
-                var pkCap = new Label { Text = "PK:", AutoSize = true, Margin = new Padding(0, 6, 8, 6) };
-                var pkBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, Margin = new Padding(0, 3, 0, 3), Anchor = AnchorStyles.Left | AnchorStyles.Right };
+                // Create controls with consistent margins and anchoring
+                var lbl = new Label
+                {
+                    Text = req.Label + ":",
+                    AutoSize = true,
+                    Margin = new Padding(0, 6, 8, 6),
+                    Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+
+                var txt = new TextBox
+                {
+                    Margin = new Padding(0, 3, 8, 3),
+                    Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
+                    MinimumSize = new Size(300, 0),
+                    Dock = DockStyle.Fill
+                };
+
+                var btn = new Button
+                {
+                    Text = "Browse...",
+                    AutoSize = true,
+                    Margin = new Padding(0, 2, 8, 2),
+                    Anchor = AnchorStyles.Left | AnchorStyles.Top
+                };
+
+                var statusLbl = new Label
+                {
+                    Text = "—",
+                    AutoSize = true,
+                    ForeColor = Color.DimGray,
+                    Margin = new Padding(0, 6, 8, 6),
+                    Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+
+                var pkCap = new Label
+                {
+                    Text = "PK:",
+                    AutoSize = true,
+                    Margin = new Padding(0, 6, 8, 6),
+                    Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+
+                var pkBox = new ComboBox
+                {
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Width = 220,
+                    Margin = new Padding(0, 3, 0, 3),
+                    Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
+                    Dock = DockStyle.Fill
+                };
 
                 tip.SetToolTip(lbl, req.Description ?? "");
                 tip.SetToolTip(txt, req.Description ?? "");
@@ -328,16 +326,13 @@ namespace AssetDataValidationTool.Forms
                 btn.Click += (s, e) => BrowseForFile(txt, statusLbl, req, pkBox);
                 txt.TextChanged += (s, e) => { if (File.Exists(txt.Text)) PopulatePkOptions(pkBox, txt.Text); };
 
-                // Add to grid
+                // Add controls to the table with proper alignment
                 tblFiles.Controls.Add(lbl, 0, row);
                 tblFiles.Controls.Add(txt, 1, row);
                 tblFiles.Controls.Add(btn, 2, row);
                 tblFiles.Controls.Add(statusLbl, 3, row);
                 tblFiles.Controls.Add(pkCap, 4, row);
                 tblFiles.Controls.Add(pkBox, 5, row);
-
-                // Make textbox stretch
-                tblFiles.SetColumnSpan(txt, 1);
 
                 fileInputs.Add((req, lbl, txt, btn, statusLbl, pkBox));
                 row++;
@@ -347,7 +342,8 @@ namespace AssetDataValidationTool.Forms
             RefreshValidateButton();
         }
 
-        private void PopulatePkOptions(ComboBox pkBox, string filePath)
+
+        private static void PopulatePkOptions(ComboBox pkBox, string filePath)
         {
             try
             {
@@ -359,54 +355,53 @@ namespace AssetDataValidationTool.Forms
                     if (pkBox.Items.Count > 0) pkBox.SelectedIndex = 0;
                 }
             }
-            catch { /* ignore */ }
+            catch { }
         }
 
         private void BrowseForFile(TextBox target, Label statusLabelForRow, InputRequirement req, ComboBox pkBox)
         {
-            using var ofd = new OpenFileDialog { Filter = "Excel/CSV|*.xlsx;*.csv|All files|*.*" };
-            if (ofd.ShowDialog(this) == DialogResult.OK)
+            using (var ofd = new OpenFileDialog { Filter = "Excel/CSV|*.xlsx;*.csv|All files|*.*" })
             {
-                target.Text = ofd.FileName;
-                PopulatePkOptions(pkBox, ofd.FileName);
-
-                bool matches = MatchesAnyPattern(ofd.FileName, req.Patterns);
-                if (req.Patterns != null && req.Patterns.Count > 0)
+                if (ofd.ShowDialog(this) == DialogResult.OK)
                 {
-                    statusLabelForRow.Text = matches ? "✓ name looks right" : "! unexpected name";
-                    statusLabelForRow.ForeColor = matches ? Color.Green : Color.OrangeRed;
-                    target.BackColor = matches ? Color.Honeydew : Color.LemonChiffon;
-                }
-                else
-                {
-                    statusLabelForRow.Text = "—";
-                    statusLabelForRow.ForeColor = Color.DimGray;
-                    target.BackColor = SystemColors.Window;
-                }
+                    target.Text = ofd.FileName;
+                    PopulatePkOptions(pkBox, ofd.FileName);
 
-                RefreshValidateButton();
+                    bool matches = MatchesAnyPattern(ofd.FileName, req.Patterns ?? new List<string>()); // Fixed null handling
+                    if (req.Patterns != null && req.Patterns.Count > 0)
+                    {
+                        statusLabelForRow.Text = matches ? "✓ name looks right" : "! unexpected name";
+                        statusLabelForRow.ForeColor = matches ? Color.Green : Color.OrangeRed;
+                        target.BackColor = matches ? Color.Honeydew : Color.LemonChiffon;
+                    }
+                    else
+                    {
+                        statusLabelForRow.Text = "—";
+                        statusLabelForRow.ForeColor = Color.DimGray;
+                        target.BackColor = SystemColors.Window;
+                    }
+                    RefreshValidateButton();
+                }
             }
         }
 
         private void RefreshValidateButton()
         {
-            var allSelected = fileInputs.All(f =>
+            bool allSelected = fileInputs.All(f =>
                 !string.IsNullOrWhiteSpace(f.pathBox.Text) &&
                 File.Exists(f.pathBox.Text) &&
                 f.pkBox.SelectedItem != null);
-
-            var hasDataPoint = cmbDataPoint.SelectedItem != null;
-            btnValidate.Enabled = allSelected && hasDataPoint;
+            btnValidate.Enabled = allSelected && cmbDataPoint.SelectedItem != null;
         }
 
-        private void RunValidation()
+        private async void RunValidation()
         {
             if (!btnValidate.Enabled) return;
 
             try
             {
-                var asset = cmbAssetClass.SelectedItem?.ToString() ?? "Unknown";
-                var dataPoint = cmbDataPoint.SelectedItem?.ToString() ?? "Hostname";
+                var asset = cmbAssetClass.SelectedItem?.ToString() ?? "Unknown"; // Fixed null handling
+                var dataPoint = cmbDataPoint.SelectedItem?.ToString() ?? "Hostname"; // Fixed null handling
                 var selected = fileInputs.Select(f => (displayName: f.req.Label, filePath: f.pathBox.Text)).ToList();
 
                 statusLabel.Text = "Validating...";
@@ -415,7 +410,10 @@ namespace AssetDataValidationTool.Forms
 
                 var results = Validator.Validate(asset, dataPoint, selected);
 
-                var pkMap = fileInputs.ToDictionary(f => f.req.Label, f => f.pkBox.SelectedItem?.ToString() ?? dataPoint);
+                // Fixed: Convert nullable dictionary to non-nullable
+                var pkMap = fileInputs.ToDictionary(
+                    f => f.req.Label,
+                    f => f.pkBox.SelectedItem?.ToString() ?? dataPoint);
                 results.PrimaryKeyBySource = pkMap;
 
                 var outFolder = Path.Combine(outputRoot, asset.Replace(' ', '_'));
@@ -428,8 +426,21 @@ namespace AssetDataValidationTool.Forms
                 results.AuditLogPath = audit;
                 lastResults = results;
 
+                try
+                {
+                    var apiSettings = ApiSettingsStore.Load();
+                    if (apiSettings.Enabled)
+                    {
+                        using (var api = new HttpApiClient(apiSettings))
+                        {
+                            await TryPushAsync(api, report, selected);
+                        }
+                    }
+                }
+                catch { }
+
                 btnZip.Enabled = true;
-                statusLabel.Text = $"Report created: {report}";
+                statusLabel.Text = "Report created: " + report;
                 UseWaitCursor = false;
 
                 if (MessageBox.Show(this, "Open report?", "Validation Complete", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
@@ -443,6 +454,21 @@ namespace AssetDataValidationTool.Forms
                 statusLabel.Text = "Error";
                 MessageBox.Show(this, "Validation failed: " + ex.Message);
             }
+        }
+
+        private static System.Threading.Tasks.Task TryPushAsync(HttpApiClient api, string reportPath, List<(string displayName, string filePath)> selected)
+        {
+            var s = ApiSettingsStore.Load();
+            if (!s.Enabled) return System.Threading.Tasks.Task.CompletedTask;
+
+            return System.Threading.Tasks.Task.Run(async () =>
+            {
+                foreach (var item in selected)
+                {
+                    try { await api.UploadSourceAsync(item.displayName, item.filePath).ConfigureAwait(false); } catch { }
+                }
+                try { await api.UploadReportAsync(reportPath).ConfigureAwait(false); } catch { }
+            });
         }
 
         private void PackageZip()
@@ -467,7 +493,7 @@ namespace AssetDataValidationTool.Forms
                 );
 
                 lastResults.ZipPackagePath = zip;
-                statusLabel.Text = $"Packaged: {zip}";
+                statusLabel.Text = "Packaged: " + zip;
 
                 if (MessageBox.Show(this, "Open zip folder?", "Packaging Complete", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
                 {
@@ -489,11 +515,11 @@ namespace AssetDataValidationTool.Forms
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Unable to open output folder: {ex.Message}");
+                MessageBox.Show(this, "Unable to open output folder: " + ex.Message);
             }
         }
 
-        private static bool MatchesAnyPattern(string filePath, List<string>? patterns)
+        private static bool MatchesAnyPattern(string filePath, List<string> patterns)
         {
             if (patterns == null || patterns.Count == 0) return true;
             var name = Path.GetFileName(filePath);
@@ -504,7 +530,7 @@ namespace AssetDataValidationTool.Forms
         private static bool WildcardIsMatch(string text, string wildcard)
         {
             if (string.IsNullOrEmpty(wildcard)) return false;
-            string pattern = "^" + Regex.Escape(wildcard).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+            string pattern = "^" + Regex.Escape(wildcard).Replace(@"\*", ".*").Replace(@"\?", ".") + "$";
             return Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase);
         }
     }

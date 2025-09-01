@@ -1,0 +1,10 @@
+
+// Replace your existing deconstruction (around line 22) with one of these two options:
+
+// OPTION A (explicit tuple variable):
+var tuple = ExcelReader.ReadFirstSheet(path);
+List<string> headers = tuple.headers;
+List<Dictionary<string, string>> rows = tuple.rows;
+
+// OPTION B (explicit deconstruction types):
+(List<string> headers, List<Dictionary<string, string>> rows) = ExcelReader.ReadFirstSheet(path);

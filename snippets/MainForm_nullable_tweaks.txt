@@ -1,0 +1,10 @@
+
+// To silence nullable warnings in MainForm.cs:
+//
+// 1) Make lastResults nullable:
+//    private ValidationResults? lastResults;
+//
+// 2) Allow null for patterns parameter on MatchesAnyPattern:
+//    private static bool MatchesAnyPattern(string filePath, List<string>? patterns)
+//
+//    (and keep the null/empty check inside as you already have in other files)

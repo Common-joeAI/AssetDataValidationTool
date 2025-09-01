@@ -1,284 +1,193 @@
-﻿using System;
+
+// ExcelReader.cs — adds ReadFirstSheet() and keeps ReadHeaders(); CSV + XLSX supported
+using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace AssetDataValidationTool.Services
 {
-    internal static class ExcelReader
+    public static class ExcelReader
     {
         /// <summary>
-        /// Reads the first worksheet (or CSV) and returns headers + rows.
-        /// headerRowIndex is 1-based (1 = first row contains headers).
+        /// Returns the first row of the first sheet as headers.
+        /// Supports .csv and .xlsx
         /// </summary>
-        public static (List<string> Headers, List<Dictionary<string, string>> Rows)
-            ReadFirstSheet(string filePath, int headerRowIndex = 1)
+        public static List<string> ReadHeaders(string path)
         {
-            if (string.IsNullOrWhiteSpace(filePath))
-                return (new List<string>(), new List<Dictionary<string, string>>());
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return new List<string>();
 
-            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            var ext = Path.GetExtension(path).ToLowerInvariant();
             if (ext == ".csv")
             {
-                return ReadCsv(filePath);
+                using var sr = new StreamReader(path);
+                var first = sr.ReadLine();
+                if (string.IsNullOrEmpty(first)) return new List<string>();
+                return first.Split(',').Select(s => s.Trim()).ToList();
             }
 
-            if (!File.Exists(filePath))
-                return (new List<string>(), new List<Dictionary<string, string>>());
-
-            using (var doc = SpreadsheetDocument.Open(filePath, false))
+            try
             {
+                using var doc = SpreadsheetDocument.Open(path, false);
                 var wbPart = doc.WorkbookPart;
-                if (wbPart == null || wbPart.Workbook == null || wbPart.Workbook.Sheets == null)
-                    return (new List<string>(), new List<Dictionary<string, string>>());
+                if (wbPart == null) return new List<string>();
 
-                var sheet = wbPart.Workbook.Sheets.Elements<Sheet>().FirstOrDefault();
-                if (sheet == null)
-                    return (new List<string>(), new List<Dictionary<string, string>>());
+                var sheet = wbPart.Workbook?.Sheets?.Elements<Sheet>()?.FirstOrDefault();
+                if (sheet == null) return new List<string>();
 
-                var wsPart = wbPart.GetPartById(sheet.Id!) as WorksheetPart;
-                if (wsPart == null || wsPart.Worksheet == null)
-                    return (new List<string>(), new List<Dictionary<string, string>>());
+                // Guard relationship id
+                var relId = sheet.Id?.Value;
+                if (string.IsNullOrEmpty(relId)) return new List<string>();
 
-                var sst = wbPart.SharedStringTablePart?.SharedStringTable;
-                var sheetData = wsPart.Worksheet.GetFirstChild<SheetData>();
-                if (sheetData == null)
-                    return (new List<string>(), new List<Dictionary<string, string>>());
+                var wsPart = wbPart.GetPartById(relId) as WorksheetPart;
+                if (wsPart == null) return new List<string>();
 
-                var rows = sheetData.Elements<Row>().ToList();
-                if (rows.Count == 0)
-                    return (new List<string>(), new List<Dictionary<string, string>>());
+                var firstRow = wsPart.Worksheet?.Descendants<Row>()?.FirstOrDefault();
+                if (firstRow == null) return new List<string>();
 
-                // Header row (1-based index)
-                if (headerRowIndex < 1 || headerRowIndex > rows.Count)
-                    headerRowIndex = 1;
+                SharedStringTable? sst = wbPart.SharedStringTablePart?.SharedStringTable;
+                var headers = new List<string>();
 
-                var headerRow = rows[headerRowIndex - 1];
-                var headerCells = headerRow.Elements<Cell>().ToList();
-                var headers = headerCells.Select(c => GetCellValue(c, sst)).ToList();
-
-                // Normalize empty/missing headers to generated names (H1, H2, ...)
-                for (int i = 0; i < headers.Count; i++)
+                foreach (var cell in firstRow.Elements<Cell>())
                 {
-                    if (string.IsNullOrWhiteSpace(headers[i]))
-                        headers[i] = $"H{i + 1}";
-                }
-
-                var dataRows = new List<Dictionary<string, string>>();
-                for (int i = headerRowIndex; i < rows.Count; i++)
-                {
-                    var r = rows[i];
-                    var cells = r.Elements<Cell>().ToList();
-                    var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-                    // Align by position (first N cells → first N headers)
-                    for (int j = 0; j < headers.Count; j++)
+                    string? text = null;
+                    if (cell.DataType != null && cell.DataType == CellValues.SharedString)
                     {
-                        string val = string.Empty;
-                        if (j < cells.Count)
+                        if (int.TryParse(cell.CellValue?.Text, out var sstIndex) && sst != null)
                         {
-                            val = GetCellValue(cells[j], sst) ?? string.Empty;
-                        }
-                        dict[headers[j]] = val.Trim();
-                    }
-
-                    // Keep only non-empty rows
-                    if (dict.Values.Any(v => !string.IsNullOrWhiteSpace(v)))
-                        dataRows.Add(dict);
-                }
-
-                return (headers, dataRows);
-            }
-        }
-
-        /// <summary>
-        /// Simple CSV reader with support for quoted fields, commas inside quotes, and escaped quotes.
-        /// </summary>
-        private static (List<string> Headers, List<Dictionary<string, string>> Rows) ReadCsv(string filePath)
-        {
-            var lines = File.ReadAllLines(filePath);
-            if (lines.Length == 0)
-                return (new List<string>(), new List<Dictionary<string, string>>());
-
-            var headers = SplitCsvLine(lines[0]);
-            // Normalize empty headers
-            for (int i = 0; i < headers.Count; i++)
-            {
-                if (string.IsNullOrWhiteSpace(headers[i]))
-                    headers[i] = $"H{i + 1}";
-            }
-
-            var rows = new List<Dictionary<string, string>>();
-            for (int i = 1; i < lines.Length; i++)
-            {
-                var cols = SplitCsvLine(lines[i]);
-                var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-                for (int j = 0; j < headers.Count; j++)
-                {
-                    var v = j < cols.Count ? cols[j] : string.Empty;
-                    dict[headers[j]] = (v ?? string.Empty).Trim();
-                }
-
-                if (dict.Values.Any(v => !string.IsNullOrWhiteSpace(v)))
-                    rows.Add(dict);
-            }
-            return (headers, rows);
-        }
-
-        /// <summary>
-        /// Splits a single CSV line respecting quotes and commas inside quotes.
-        /// Supports escaping quotes by doubling them ("").
-        /// </summary>
-        private static List<string> SplitCsvLine(string line)
-        {
-            var result = new List<string>();
-            if (line == null)
-            {
-                result.Add(string.Empty);
-                return result;
-            }
-
-            bool inQuotes = false;
-            var cur = new StringBuilder();
-
-            for (int i = 0; i < line.Length; i++)
-            {
-                char ch = line[i];
-
-                if (ch == '"')
-                {
-                    if (inQuotes)
-                    {
-                        // If next char is also a quote, this is an escaped quote.
-                        if (i + 1 < line.Length && line[i + 1] == '"')
-                        {
-                            cur.Append('"');
-                            i++; // skip the second quote
-                        }
-                        else
-                        {
-                            // End quote
-                            inQuotes = false;
+                            var item = sst.ElementAtOrDefault(sstIndex);
+                            text = item?.InnerText;
                         }
                     }
                     else
                     {
-                        // Begin quote only if at field start or after comma
-                        inQuotes = true;
+                        text = cell.CellValue?.Text;
                     }
+                    headers.Add(text?.Trim() ?? string.Empty);
                 }
-                else if (ch == ',' && !inQuotes)
-                {
-                    result.Add(cur.ToString());
-                    cur.Clear();
-                }
-                else
-                {
-                    cur.Append(ch);
-                }
-            }
 
-            result.Add(cur.ToString());
-            return result;
+                // Trim trailing blanks
+                for (int i = headers.Count - 1; i >= 0; i--)
+                {
+                    if (string.IsNullOrEmpty(headers[i])) headers.RemoveAt(i);
+                    else break;
+                }
+
+                return headers;
+            }
+            catch
+            {
+                return new List<string>();
+            }
         }
 
         /// <summary>
-        /// Returns the text value for an OpenXML Cell, considering SharedString, InlineString, Boolean, and Number.
+        /// Reads the first worksheet (or CSV) into headers + row dictionaries.
         /// </summary>
-        private static string GetCellValue(Cell cell, SharedStringTable? sst)
+        public static (List<string> headers, List<Dictionary<string, string>> rows) ReadFirstSheet(string path)
         {
-            if (cell == null)
-                return string.Empty;
+            var headers = ReadHeaders(path);
+            var rows = new List<Dictionary<string, string>>();
 
-            // Inline string?
-            if (cell.DataType != null && cell.DataType.Value == CellValues.InlineString && cell.InlineString != null)
-            {
-                return cell.InlineString.Text?.Text ?? string.Empty;
-            }
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || headers.Count == 0)
+                return (headers, rows);
 
-            // Raw value text (often for numbers/booleans or when DataType is null)
-            var raw = cell.CellValue?.Text ?? string.Empty;
+            var ext = Path.GetExtension(path).ToLowerInvariant();
 
-            if (cell.DataType == null)
-            {
-                // No explicit data type: treat as raw string/number as-is
-                return raw;
-            }
-
-            var dt = cell.DataType.Value;
-
-            // Avoid switch expressions to keep analyzers happy (CS9135)
-            if (dt == CellValues.SharedString)
-            {
-                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idx)
-                    && sst != null
-                    && idx >= 0
-                    && idx < sst.ChildElements.Count)
-                {
-                    var ssi = sst.ElementAt(idx);
-                    // Shared string items may contain runs; InnerText flattens them.
-                    return ssi?.InnerText ?? string.Empty;
-                }
-                return string.Empty;
-            }
-            else if (dt == CellValues.Boolean)
-            {
-                // OpenXML uses "1" or "0" for booleans
-                return (raw == "1").ToString();
-            }
-            else
-            {
-                // String, Number, Date (stored as number), Error, etc. — return raw
-                return raw;
-            }
-        }
-    
-        /// <summary>
-        /// Reads header names from the first row of the first worksheet (for .xlsx) or the first CSV line.
-        /// </summary>
-        public static List<string> ReadHeaders(string filePath)
-        {
-            var headers = new List<string>();
-            var ext = Path.GetExtension(filePath).ToLowerInvariant();
             if (ext == ".csv")
             {
-                using var sr = new StreamReader(filePath);
-                var first = sr.ReadLine() ?? string.Empty;
-                headers = SplitCsvLine(first);
-            }
-            else if (ext == ".xlsx")
-            {
-                using var doc = SpreadsheetDocument.Open(filePath, false);
-                var wbPart = doc.WorkbookPart!;
-                var wsPart = wbPart.WorksheetParts.First();
-                var sheet = wsPart.Worksheet;
-                var sd = sheet.GetFirstChild<SheetData>();
-                var firstRow = sd.Elements<Row>().FirstOrDefault();
-                if (firstRow != null)
+                using var sr = new StreamReader(path);
+                // Skip header
+                _ = sr.ReadLine();
+                string? line;
+                while ((line = sr.ReadLine()) != null)
                 {
-                    foreach (var c in firstRow.Elements<Cell>())
+                    var parts = line.Split(',');
+                    var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < headers.Count; i++)
                     {
-                        var val = GetCellValue(c, wbPart.SharedStringTablePart?.SharedStringTable);
-                        headers.Add(val?.Trim() ?? string.Empty);
+                        var val = i < parts.Length ? parts[i] : string.Empty;
+                        dict[headers[i]] = val;
                     }
+                    rows.Add(dict);
                 }
+                return (headers, rows);
             }
-            else
+
+            try
             {
-                // Fallback: try to read as CSV
-                using var sr = new StreamReader(filePath);
-                var first = sr.ReadLine() ?? string.Empty;
-                headers = SplitCsvLine(first);
+                using var doc = SpreadsheetDocument.Open(path, false);
+                var wbPart = doc.WorkbookPart;
+                if (wbPart == null) return (headers, rows);
+
+                var sheet = wbPart.Workbook?.Sheets?.Elements<Sheet>()?.FirstOrDefault();
+                if (sheet == null) return (headers, rows);
+
+                var relId = sheet.Id?.Value;
+                if (string.IsNullOrEmpty(relId)) return (headers, rows);
+
+                var wsPart = wbPart.GetPartById(relId) as WorksheetPart;
+                if (wsPart == null) return (headers, rows);
+
+                SharedStringTable? sst = wbPart.SharedStringTablePart?.SharedStringTable;
+
+                // All subsequent rows after the first
+                foreach (var row in wsPart.Worksheet?.Descendants<Row>()?.Skip(1) ?? Enumerable.Empty<Row>())
+                {
+                    var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    int colIndex = 0;
+                    foreach (var cell in row.Elements<Cell>())
+                    {
+                        // Derive column index from cell reference (e.g., "C5" -> 2)
+                        colIndex = GetColumnIndexFromReference(cell.CellReference?.Value) ?? colIndex;
+
+                        string? text = null;
+                        if (cell.DataType != null && cell.DataType == CellValues.SharedString)
+                        {
+                            if (int.TryParse(cell.CellValue?.Text, out var sstIndex) && sst != null)
+                                text = sst.ElementAtOrDefault(sstIndex)?.InnerText;
+                        }
+                        else
+                        {
+                            text = cell.CellValue?.Text;
+                        }
+
+                        if (colIndex >= 0 && colIndex < headers.Count)
+                            dict[headers[colIndex]] = text ?? string.Empty;
+
+                        colIndex++;
+                    }
+
+                    // Ensure all headers exist
+                    foreach (var h in headers)
+                        if (!dict.ContainsKey(h)) dict[h] = string.Empty;
+
+                    rows.Add(dict);
+                }
+
+                return (headers, rows);
             }
-            // Remove duplicates and empties
-            headers = headers.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            return headers;
+            catch
+            {
+                return (headers, rows);
+            }
         }
-    
+
+        private static int? GetColumnIndexFromReference(string? cellRef)
+        {
+            if (string.IsNullOrEmpty(cellRef)) return null;
+            // Extract letters
+            int idx = 0;
+            foreach (char c in cellRef)
+            {
+                if (char.IsLetter(c))
+                    idx = idx * 26 + (char.ToUpperInvariant(c) - 'A' + 1);
+                else break;
+            }
+            return idx > 0 ? idx - 1 : (int?)null;
+        }
     }
 }
