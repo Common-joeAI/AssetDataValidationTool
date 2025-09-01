@@ -1,0 +1,15 @@
+{
+  "Computers": [
+    {
+      "label": "Baseline"
+    },
+    {
+      "label": "Discovery"
+    },
+    {
+      "label": "Tertiary",
+      "optional": true,
+      "description": "Extra datapoints (optional)"
+    }
+  ]
+}
