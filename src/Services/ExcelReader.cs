@@ -237,5 +237,48 @@ namespace AssetDataValidationTool.Services
                 return raw;
             }
         }
+    
+        /// <summary>
+        /// Reads header names from the first row of the first worksheet (for .xlsx) or the first CSV line.
+        /// </summary>
+        public static List<string> ReadHeaders(string filePath)
+        {
+            var headers = new List<string>();
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            if (ext == ".csv")
+            {
+                using var sr = new StreamReader(filePath);
+                var first = sr.ReadLine() ?? string.Empty;
+                headers = SplitCsvLine(first);
+            }
+            else if (ext == ".xlsx")
+            {
+                using var doc = SpreadsheetDocument.Open(filePath, false);
+                var wbPart = doc.WorkbookPart!;
+                var wsPart = wbPart.WorksheetParts.First();
+                var sheet = wsPart.Worksheet;
+                var sd = sheet.GetFirstChild<SheetData>();
+                var firstRow = sd.Elements<Row>().FirstOrDefault();
+                if (firstRow != null)
+                {
+                    foreach (var c in firstRow.Elements<Cell>())
+                    {
+                        var val = GetCellValue(c, wbPart.SharedStringTablePart?.SharedStringTable);
+                        headers.Add(val?.Trim() ?? string.Empty);
+                    }
+                }
+            }
+            else
+            {
+                // Fallback: try to read as CSV
+                using var sr = new StreamReader(filePath);
+                var first = sr.ReadLine() ?? string.Empty;
+                headers = SplitCsvLine(first);
+            }
+            // Remove duplicates and empties
+            headers = headers.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return headers;
+        }
+    
     }
 }

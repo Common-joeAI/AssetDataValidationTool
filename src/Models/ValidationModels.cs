@@ -21,7 +21,7 @@ namespace AssetDataValidationTool.Models
     {
         public string Key { get; set; } = string.Empty;
         public string Column { get; set; } = string.Empty;
-        public Dictionary<string, string?> ValuesByFile { get; set; } = new();
+        public Dictionary<string, string> ValuesByFile { get; set; } = new();
     }
 
     public class ValidationResults
@@ -36,5 +36,8 @@ namespace AssetDataValidationTool.Models
         public string ReportFilePath { get; set; } = string.Empty;
         public string AuditLogPath { get; set; } = string.Empty;
         public string ZipPackagePath { get; set; } = string.Empty;
+
+        // New: selected PK per source label
+        public Dictionary<string, string> PrimaryKeyBySource { get; set; } = new();
     }
 }
